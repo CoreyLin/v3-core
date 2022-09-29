@@ -54,10 +54,13 @@ library TickMath {
     }
 
     /// @notice Calculates the greatest tick value such that getRatioAtTick(tick) <= ratio
+    /// 计算最大的tick值，使getRatioAtTick(tick) <= ratio
     /// @dev Throws in case sqrtPriceX96 < MIN_SQRT_RATIO, as MIN_SQRT_RATIO is the lowest value getRatioAtTick may
     /// ever return.
+    /// 当sqrtPriceX96 < MIN_SQRT_RATIO时报错，因为MIN_SQRT_RATIO是getRatioAtTick可能返回的最低值。
     /// @param sqrtPriceX96 The sqrt ratio for which to compute the tick as a Q64.96
     /// @return tick The greatest tick for which the ratio is less than or equal to the input ratio
+    /// 小于或等于输入ratio的最大tick
     function getTickAtSqrtRatio(uint160 sqrtPriceX96) internal pure returns (int24 tick) {
         // second inequality must be < because the price can never reach the price at the max tick
         require(sqrtPriceX96 >= MIN_SQRT_RATIO && sqrtPriceX96 < MAX_SQRT_RATIO, 'R');

@@ -10,16 +10,19 @@ interface IUniswapV3PoolActions {
     function initialize(uint160 sqrtPriceX96) external;
 
     /// @notice Adds liquidity for the given recipient/tickLower/tickUpper position
+    /// 为指定的recipient/tickLower/tickUpper position增加流动性
     /// @dev The caller of this method receives a callback in the form of IUniswapV3MintCallback#uniswapV3MintCallback
     /// in which they must pay any token0 or token1 owed for the liquidity. The amount of token0/token1 due depends
     /// on tickLower, tickUpper, the amount of liquidity, and the current price.
-    /// @param recipient The address for which the liquidity will be created
-    /// @param tickLower The lower tick of the position in which to add liquidity
-    /// @param tickUpper The upper tick of the position in which to add liquidity
-    /// @param amount The amount of liquidity to mint
-    /// @param data Any data that should be passed through to the callback
-    /// @return amount0 The amount of token0 that was paid to mint the given amount of liquidity. Matches the value in the callback
-    /// @return amount1 The amount of token1 that was paid to mint the given amount of liquidity. Matches the value in the callback
+    /// 这个方法的调用方NonfungiblePositionManager接收到一个回调函数(pool调用NonfungiblePositionManager)，形式为IUniswapV3MintCallback#uniswapV3MintCallback，
+    /// 在这个回调函数中，他们必须为流动性支付token0或token1。token0/token1的金额取决于tickLower、tickUpper、liquidity和当前价格。
+    /// @param recipient The address for which the liquidity will be created 为其创建流动性的地址
+    /// @param tickLower The lower tick of the position in which to add liquidity 要增加流动性的头寸的tick下限
+    /// @param tickUpper The upper tick of the position in which to add liquidity 要增加流动性的头寸的tick上限
+    /// @param amount The amount of liquidity to mint 要铸造的流动性数量
+    /// @param data Any data that should be passed through to the callback 应该传递给回调函数的数据
+    /// @return amount0 The amount of token0 that was paid to mint the given amount of liquidity. Matches the value in the callback token0的数量，用来铸造给定数量的流动性。匹配回调中的值
+    /// @return amount1 The amount of token1 that was paid to mint the given amount of liquidity. Matches the value in the callback token1的数量，用来铸造给定数量的流动性。匹配回调中的值
     function mint(
         address recipient,
         int24 tickLower,
@@ -63,12 +66,20 @@ interface IUniswapV3PoolActions {
     ) external returns (uint256 amount0, uint256 amount1);
 
     /// @notice Swap token0 for token1, or token1 for token0
+    /// 用token0换token1，或用token1换token0
     /// @dev The caller of this method receives a callback in the form of IUniswapV3SwapCallback#uniswapV3SwapCallback
+    /// 这个方法的调用者以IUniswapV3SwapCallback#uniswapV3SwapCallback的形式接收回调
     /// @param recipient The address to receive the output of the swap
+    /// 接收交换的输出的地址
     /// @param zeroForOne The direction of the swap, true for token0 to token1, false for token1 to token0
+    /// 交换的方向，token0到token1为真，token1到token0为假
     /// @param amountSpecified The amount of the swap, which implicitly configures the swap as exact input (positive), or exact output (negative)
+    /// 交换的数量，它隐式地将交换配置为精确输入(正数)或精确输出(负数)。为正，则为精确输入；为负，则为精确输出。
     /// @param sqrtPriceLimitX96 The Q64.96 sqrt price limit. If zero for one, the price cannot be less than this
     /// value after the swap. If one for zero, the price cannot be greater than this value after the swap
+    /// 交换后的token0的价格限制
+    /// 如果token0换token1，则交换后的价格不能小于此值，因为交换后token0会贬值，而价格是以token0计价的。
+    /// 如果token1换token0，则交换后的价格不能大于此值，因为交换后token0会升值，而价格是以token0计价的。
     /// @param data Any data to be passed through to the callback
     /// @return amount0 The delta of the balance of token0 of the pool, exact when negative, minimum when positive
     /// @return amount1 The delta of the balance of token1 of the pool, exact when negative, minimum when positive

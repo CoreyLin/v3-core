@@ -23,6 +23,7 @@ contract UniswapV3Factory is IUniswapV3Factory, UniswapV3PoolDeployer, NoDelegat
         owner = msg.sender;
         emit OwnerChanged(address(0), msg.sender);
 
+        // 写死的
         feeAmountTickSpacing[500] = 10;
         emit FeeAmountEnabled(500, 10);
         feeAmountTickSpacing[3000] = 60;
@@ -37,15 +38,16 @@ contract UniswapV3Factory is IUniswapV3Factory, UniswapV3PoolDeployer, NoDelegat
         address tokenB,
         uint24 fee
     ) external override noDelegateCall returns (address pool) {
-        require(tokenA != tokenB);
-        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
-        require(token0 != address(0));
-        int24 tickSpacing = feeAmountTickSpacing[fee];
+        require(tokenA != tokenB); // 地址不能相等
+        (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA); // 地址排序
+        require(token0 != address(0)); // 小的地址不能为0地址
+        int24 tickSpacing = feeAmountTickSpacing[fee]; // 在factory的构造函数中写死的
         require(tickSpacing != 0);
-        require(getPool[token0][token1][fee] == address(0));
-        pool = deploy(address(this), token0, token1, fee, tickSpacing);
+        require(getPool[token0][token1][fee] == address(0)); // pool还不存在
+        pool = deploy(address(this), token0, token1, fee, tickSpacing); // 部署pool
         getPool[token0][token1][fee] = pool;
         // populate mapping in the reverse direction, deliberate choice to avoid the cost of comparing addresses
+        // 反向填充映射，有意选择以避免比较地址的成本
         getPool[token1][token0][fee] = pool;
         emit PoolCreated(token0, token1, fee, tickSpacing, pool);
     }

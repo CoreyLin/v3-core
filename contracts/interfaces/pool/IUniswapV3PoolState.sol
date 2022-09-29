@@ -44,7 +44,9 @@ interface IUniswapV3PoolState {
     function protocolFees() external view returns (uint128 token0, uint128 token1);
 
     /// @notice The currently in range liquidity available to the pool
+    /// 可用于池的当前范围内的流动性
     /// @dev This value has no relationship to the total liquidity across all ticks
+    /// 这个值与所有ticks的总流动性没有关系
     function liquidity() external view returns (uint128);
 
     /// @notice Look up information about a specific tick in the pool

@@ -33,9 +33,9 @@ interface IUniswapV3Factory {
     /// @return The address of the factory owner
     function owner() external view returns (address);
 
-    /// @notice Returns the tick spacing for a given fee amount, if enabled, or 0 if not enabled
-    /// @dev A fee amount can never be removed, so this value should be hard coded or cached in the calling context
-    /// @param fee The enabled fee, denominated in hundredths of a bip. Returns 0 in case of unenabled fee
+    /// @notice Returns the tick spacing for a given fee amount, if enabled, or 0 if not enabled 如果启用，则返回给定fee的tick spacing;如果未启用，则返回0
+    /// @dev A fee amount can never be removed, so this value should be hard coded or cached in the calling context fee amount永远不能删除，因此该值应该硬编码或缓存在调用上下文中
+    /// @param fee The enabled fee, denominated in hundredths of a bip. Returns 0 in case of unenabled fee 启用的fee，以百分之一bip为单位。如果费用未启用，则返回0
     /// @return The tick spacing
     function feeAmountTickSpacing(uint24 fee) external view returns (int24);
 
@@ -51,13 +51,14 @@ interface IUniswapV3Factory {
         uint24 fee
     ) external view returns (address pool);
 
-    /// @notice Creates a pool for the given two tokens and fee
+    /// @notice Creates a pool for the given two tokens and fee 为给定的两个代币和fee创建一个池
     /// @param tokenA One of the two tokens in the desired pool
     /// @param tokenB The other of the two tokens in the desired pool
     /// @param fee The desired fee for the pool
     /// @dev tokenA and tokenB may be passed in either order: token0/token1 or token1/token0. tickSpacing is retrieved
     /// from the fee. The call will revert if the pool already exists, the fee is invalid, or the token arguments
     /// are invalid.
+    /// tokenA和tokenB可以按任意一个顺序传递:token0/token1或token1/token0。从fee中检索tickSpacing。如果池已经存在、fee无效或token参数无效，则调用将回滚。
     /// @return pool The address of the newly created pool
     function createPool(
         address tokenA,

@@ -3,7 +3,9 @@ pragma solidity >=0.4.0 <0.8.0;
 
 /// @title Contains 512-bit math functions
 /// @notice Facilitates multiplication and division that can have overflow of an intermediate value without any loss of precision
+/// 有利于在不损失精度的情况下产生中间值溢出的乘法和除法
 /// @dev Handles "phantom overflow" i.e., allows multiplication and division where an intermediate value overflows 256 bits
+/// 处理“幻象溢出”，即允许中间值溢出256位时的乘法和除法
 library FullMath {
     /// @notice Calculates floor(a×b÷denominator) with full precision. Throws if result overflows a uint256 or denominator == 0
     /// @param a The multiplicand
@@ -11,10 +13,10 @@ library FullMath {
     /// @param denominator The divisor
     /// @return result The 256-bit result
     /// @dev Credit to Remco Bloemen under MIT license https://xn--2-umb.com/21/muldiv
-    function mulDiv(
+    function mulDiv(//TODO
         uint256 a,
         uint256 b,
-        uint256 denominator
+        uint256 denominator // 分母
     ) internal pure returns (uint256 result) {
         // 512-bit multiply [prod1 prod0] = a * b
         // Compute the product mod 2**256 and mod 2**256 - 1
