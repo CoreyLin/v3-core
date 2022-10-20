@@ -28,8 +28,11 @@ interface IUniswapV3PoolImmutables {
     function tickSpacing() external view returns (int24);
 
     /// @notice The maximum amount of position liquidity that can use any tick in the range
+    /// 可以使用范围内任何tick的头寸流动性的最大金额，应该说是当前每tick的最大in range流动性数量
     /// @dev This parameter is enforced per tick to prevent liquidity from overflowing a uint128 at any point, and
     /// also prevents out-of-range liquidity from being used to prevent adding in-range liquidity to a pool
+    /// 此参数每tick强制执行，以防止流动性在任何点溢出uint128，也防止使用超出范围的流动性，以防止向池中添加范围内的流动性
     /// @return The max amount of liquidity per tick
+    /// 每tick的最大流动性数量
     function maxLiquidityPerTick() external view returns (uint128);
 }

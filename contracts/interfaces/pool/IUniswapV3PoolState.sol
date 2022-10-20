@@ -50,19 +50,31 @@ interface IUniswapV3PoolState {
     function liquidity() external view returns (uint128);
 
     /// @notice Look up information about a specific tick in the pool
+    /// 查询池中特定tick的信息
     /// @param tick The tick to look up
+    /// 要查找的tick
     /// @return liquidityGross the total amount of position liquidity that uses the pool either as tick lower or
     /// tick upper,
+    /// 使用池作为低tick或高tick的头寸流动性总额
     /// liquidityNet how much liquidity changes when the pool price crosses the tick,
+    /// 当池价格越过tick时，有多少流动性变化
     /// feeGrowthOutside0X128 the fee growth on the other side of the tick from the current tick in token0,
+    /// 从token0的当前tick到tick的另一端的费用增长
     /// feeGrowthOutside1X128 the fee growth on the other side of the tick from the current tick in token1,
+    /// 从token1的当前tick到tick的另一端的费用增长
     /// tickCumulativeOutside the cumulative tick value on the other side of the tick from the current tick
+    /// 在当前tick的tick的另一侧的累计tick值
     /// secondsPerLiquidityOutsideX128 the seconds spent per liquidity on the other side of the tick from the current tick,
+    /// 从当前tick到另一端的每个流动性花费的秒数
     /// secondsOutside the seconds spent on the other side of the tick from the current tick,
+    /// 从tick到另一端花费的秒数
     /// initialized Set to true if the tick is initialized, i.e. liquidityGross is greater than 0, otherwise equal to false.
+    /// 如果tick被初始化，则设置为true，即liquidityGross大于0，否则为false。
     /// Outside values can only be used if the tick is initialized, i.e. if liquidityGross is greater than 0.
+    /// 外部值只能在tick被初始化，即liquidityGross大于0的情况下使用。
     /// In addition, these values are only relative and must be used only in comparison to previous snapshots for
     /// a specific position.
+    /// 此外，这些值只是相对的，必须仅用于与特定头寸的前一个快照的比较。
     function ticks(int24 tick)
         external
         view
@@ -78,6 +90,7 @@ interface IUniswapV3PoolState {
         );
 
     /// @notice Returns 256 packed tick initialized boolean values. See TickBitmap for more information
+    /// 返回256个压缩的tick初始化布尔值
     function tickBitmap(int16 wordPosition) external view returns (uint256);
 
     /// @notice Returns the information about a position by the position's key

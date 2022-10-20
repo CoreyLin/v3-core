@@ -8,36 +8,52 @@ pragma solidity >=0.5.0 <0.8.0;
 /// maximum length of the oracle array. New slots will be added when the array is fully populated.
 /// Observations are overwritten when the full length of the oracle array is populated.
 /// The most recent observation is available, independent of the length of the oracle array, by passing 0 to observe()
+/// 提供价格和流动性数据，对多种系统设计有用
+/// 存储oracle数据的实例，"observations"，在oracle数组中收集
+/// 每个池初始化的oracle数组长度为1。任何人都可以通过支付SSTOREs来增加oracle数组的最大长度。当数组被完全填充时，将添加新的槽。
+/// 当填充oracle数组的整个长度时，Observations将被覆盖。
+/// 通过向observe()传递0，可以获得与oracle数组长度无关的最新observation。
 library Oracle {
     struct Observation {
         // the block timestamp of the observation
+        // 观察的区块时间戳
         uint32 blockTimestamp;
         // the tick accumulator, i.e. tick * time elapsed since the pool was first initialized
+        // tick累加器，即tick*自池第一次初始化以来经过的时间
         int56 tickCumulative;
         // the seconds per liquidity, i.e. seconds elapsed / max(1, liquidity) since the pool was first initialized
+        // 每个流动性的秒数，即从池第一次初始化开始的秒数/max(1, liquidity)
         uint160 secondsPerLiquidityCumulativeX128;
         // whether or not the observation is initialized
+        // 这个observation是否初始化
         bool initialized;
     }
 
     /// @notice Transforms a previous observation into a new observation, given the passage of time and the current tick and liquidity values
+    /// 根据时间的流逝和当前的tick和流动性值，将以前的observation转换为新的observation
     /// @dev blockTimestamp _must_ be chronologically equal to or greater than last.blockTimestamp, safe for 0 or 1 overflows
+    /// 必须在时间顺序上等于或大于last.blockTimestamp，对于0或1溢出是安全的
     /// @param last The specified observation to be transformed
+    /// 要转换的指定观察值
     /// @param blockTimestamp The timestamp of the new observation
+    /// 新的观察时间戳
     /// @param tick The active tick at the time of the new observation
+    /// 新观察时的活动tick
     /// @param liquidity The total in-range liquidity at the time of the new observation
+    /// 新观察时的in-range的总流动性
     /// @return Observation The newly populated observation
+    /// 新填充的观察值
     function transform(
         Observation memory last,
         uint32 blockTimestamp,
         int24 tick,
         uint128 liquidity
     ) private pure returns (Observation memory) {
-        uint32 delta = blockTimestamp - last.blockTimestamp;
+        uint32 delta = blockTimestamp - last.blockTimestamp; // 时间差
         return
             Observation({
-                blockTimestamp: blockTimestamp,
-                tickCumulative: last.tickCumulative + int56(tick) * delta,
+                blockTimestamp: blockTimestamp, // 新时间戳
+                tickCumulative: last.tickCumulative + int56(tick) * delta, // 增加 当前活动tick*时间差
                 secondsPerLiquidityCumulativeX128: last.secondsPerLiquidityCumulativeX128 +
                     ((uint160(delta) << 128) / (liquidity > 0 ? liquidity : 1)),
                 initialized: true
@@ -233,17 +249,28 @@ library Oracle {
     /// 0 may be passed as `secondsAgo' to return the current cumulative values.
     /// If called with a timestamp falling between two observations, returns the counterfactual accumulator values
     /// at exactly the timestamp between the two observations.
+    /// 如果在所需的观察时间戳或之前的observation不存在，则回滚。0可以作为secondsAgo传递，以返回当前的累积值。
+    /// 如果使用位于两个观察之间的时间戳调用，则返回恰好位于两个观察之间的时间戳处的反事实累加器值。
     /// @param self The stored oracle array
+    /// 存储的oracle数组
     /// @param time The current block timestamp
+    /// 当前区块的时间戳
     /// @param secondsAgo The amount of time to look back, in seconds, at which point to return an observation
+    /// 回看的时间，以秒为单位，在这个时间点返回一个观察值
     /// @param tick The current tick
+    /// 当前tick
     /// @param index The index of the observation that was most recently written to the observations array
+    /// 最近写入observations数组的observation的索引
     /// @param liquidity The current in-range pool liquidity
+    /// 当前in-range的池的流动性
     /// @param cardinality The number of populated elements in the oracle array
+    /// oracle数组中被填充元素的数量
     /// @return tickCumulative The tick * time elapsed since the pool was first initialized, as of `secondsAgo`
+    /// tick * 从池第一次初始化到现在的时间。
     /// @return secondsPerLiquidityCumulativeX128 The time elapsed / max(1, liquidity) since the pool was first initialized, as of `secondsAgo`
+    /// 自池第一次初始化以来所经过的时间/max(1, liquidity)
     function observeSingle(
-        Observation[65535] storage self,
+        Observation[65535] storage self, // 注意是storage
         uint32 time,
         uint32 secondsAgo,
         int24 tick,
@@ -252,11 +279,14 @@ library Oracle {
         uint16 cardinality
     ) internal view returns (int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128) {
         if (secondsAgo == 0) {
+            // 获取最近写入observations数组的observation
             Observation memory last = self[index];
+            // 如果最近写入observations数组的交易和本次交易不是在一个区块，就根据时间的流逝和当前的tick和流动性值，将以前的observation转换为新的observation
             if (last.blockTimestamp != time) last = transform(last, time, tick, liquidity);
             return (last.tickCumulative, last.secondsPerLiquidityCumulativeX128);
         }
 
+        //TODO: 下面还没看
         uint32 target = time - secondsAgo;
 
         (Observation memory beforeOrAt, Observation memory atOrAfter) =

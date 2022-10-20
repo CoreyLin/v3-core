@@ -55,19 +55,26 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
     struct Slot0 {
         // the current price
+        // 当前价格
         uint160 sqrtPriceX96;
         // the current tick
+        // 当前的tick
         int24 tick;
         // the most-recently updated index of the observations array
+        // observations数组最近更新的索引
         uint16 observationIndex;
         // the current maximum number of observations that are being stored
+        // 当前被存储的最大observations数量
         uint16 observationCardinality;
         // the next maximum number of observations to store, triggered in observations.write
+        // 下一个要存储的最大observations数量，在observations.write中触发
         uint16 observationCardinalityNext;
         // the current protocol fee as a percentage of the swap fee taken on withdrawal
         // represented as an integer denominator (1/x)%
+        // 当前协议费用占提取swap费用的百分比，表示为整数分母(1/x)%
         uint8 feeProtocol;
         // whether the pool is locked
+        // 池是否被锁定
         bool unlocked;
     }
     /// @inheritdoc IUniswapV3PoolState
@@ -96,6 +103,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// @inheritdoc IUniswapV3PoolState
     mapping(bytes32 => Position.Info) public override positions;
     /// @inheritdoc IUniswapV3PoolState
+    // Observation数组，长度为65535
     Oracle.Observation[65535] public override observations;
 
     /// @dev Mutually exclusive reentrancy protection into the pool to/from a method. This method also prevents entrance
@@ -304,7 +312,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// @param params the position details and the change to the position's liquidity to effect
     /// 头寸细节和头寸流动性变化的影响
     /// @return position a storage pointer referencing the position with the given owner and tick range
-    /// 一个存储指针，它引用具有给定所有者和tick范围的头寸
+    /// 一个存储指针，它引用具有给定所有者和tick范围的头寸。所有者通常就是NonfungiblePositionManager
     /// @return amount0 the amount of token0 owed to the pool, negative if the pool should pay the recipient
     /// LP欠池token0的金额，如果池应该支付给接收者，则为负数
     /// @return amount1 the amount of token1 owed to the pool, negative if the pool should pay the recipient
@@ -313,7 +321,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         private
         noDelegateCall // 判断不是delegatecall，即状态变量的变化应该作用于UniswapV3Pool自己的存储槽，而不是外层调用合约
         returns (
-            Position.Info storage position,
+            Position.Info storage position, // 注意，返回的position是storage修饰的
             int256 amount0,
             int256 amount1
         )
@@ -323,10 +331,10 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         Slot0 memory _slot0 = slot0; // SLOAD for gas optimization 节约gas费
 
         position = _updatePosition(//TODO
-            params.owner,
+            params.owner, // 此处的owner是NonfungiblePositionManager合约
             params.tickLower,
             params.tickUpper,
-            params.liquidityDelta,
+            params.liquidityDelta, // 增加或者移除的流动性数量，可为正，可为负
             _slot0.tick
         );
 
@@ -378,7 +386,9 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     }
 
     /// @dev Gets and updates a position with the given liquidity delta
+    /// 获取头寸并用给定流动性增量（减量）更新它
     /// @param owner the owner of the position
+    /// 头寸的owner，通常是NonfungiblePositionManager
     /// @param tickLower the lower tick of the position's tick range
     /// @param tickUpper the upper tick of the position's tick range
     /// @param tick the current tick, passed to avoid sloads
@@ -388,7 +398,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         int24 tickUpper,
         int128 liquidityDelta,
         int24 tick
-    ) private returns (Position.Info storage position) {
+    ) private returns (Position.Info storage position) { // 注意：返回的position是storage修饰的
+        // 给定头寸的所有者和头寸边界，返回头寸的Info结构体
         position = positions.get(owner, tickLower, tickUpper);
 
         uint256 _feeGrowthGlobal0X128 = feeGrowthGlobal0X128; // SLOAD for gas optimization
@@ -397,32 +408,37 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         // if we need to update the ticks, do it
         bool flippedLower;
         bool flippedUpper;
-        if (liquidityDelta != 0) {
-            uint32 time = _blockTimestamp();
+        if (liquidityDelta != 0) { // liquidityDelta为非0,意味着流动性有增加或者减少
+            uint32 time = _blockTimestamp(); // 获取当前区块时间
             (int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128) =
-                observations.observeSingle(
-                    time,
+                // 如果在所需的观察时间戳或之前的observation不存在，则回滚。0可以作为secondsAgo传递，以返回当前的累积值。
+                // 如果使用位于两个观察之间的时间戳调用，则返回恰好位于两个观察之间的时间戳处的反事实累加器值。
+                observations.observeSingle( // Observation数组，长度为65535
+                    time, // 当前区块的时间戳
                     0,
-                    slot0.tick,
-                    slot0.observationIndex,
-                    liquidity,
-                    slot0.observationCardinality
+                    slot0.tick, // 当前的tick
+                    slot0.observationIndex, // observations数组最近更新的索引
+                    liquidity, // 当前in-range的池的流动性
+                    slot0.observationCardinality // 当前被存储的最大observations数量，即oracle数组中被填充元素的数量
                 );
 
+            // flippedLower和flippedUpper代表是否将tick从初始化转换为未初始化，或反之亦然
+            // 更新lower tick，如果该tick从初始化翻转到未初始化则返回true，反之亦然
             flippedLower = ticks.update(
-                tickLower,
-                tick,
-                liquidityDelta,
-                _feeGrowthGlobal0X128,
-                _feeGrowthGlobal1X128,
-                secondsPerLiquidityCumulativeX128,
-                tickCumulative,
-                time,
-                false,
-                maxLiquidityPerTick
+                tickLower, // 将被更新的tick，此处是头寸的lower tick
+                tick, // 当前tick
+                liquidityDelta, // 当tick从左到右(从右到左)交叉时，增加(减去)一个新的流动性量
+                _feeGrowthGlobal0X128, // 每单位流动性的全部时间全局费用增长，以token0为单位
+                _feeGrowthGlobal1X128, // 每单位流动性的全部时间全局费用增长，以token1为单位
+                secondsPerLiquidityCumulativeX128, // 在observeSingle里已经更新
+                tickCumulative, // 在observeSingle里已经更新
+                time, // 当前区块时间戳，转换为uint32
+                false, // 更新头寸的lower tick为false
+                maxLiquidityPerTick // 当前每tick的最大in range流动性数量
             );
+            // 更新upper tick，如果该tick从初始化翻转到未初始化则返回true，反之亦然
             flippedUpper = ticks.update(
-                tickUpper,
+                tickUpper, // 将被更新的tick，此处是头寸的upper tick
                 tick,
                 liquidityDelta,
                 _feeGrowthGlobal0X128,
@@ -430,22 +446,25 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                 secondsPerLiquidityCumulativeX128,
                 tickCumulative,
                 time,
-                true,
+                true, // 更新头寸的lower tick为false
                 maxLiquidityPerTick
             );
 
             if (flippedLower) {
+                // 将给定tick的初始化状态从false翻转为true，反之亦然
                 tickBitmap.flipTick(tickLower, tickSpacing);
             }
             if (flippedUpper) {
+                // 将给定tick的初始化状态从false翻转为true，反之亦然
                 tickBitmap.flipTick(tickUpper, tickSpacing);
             }
         }
 
+        // 获取tickLower和tickUpper之间每单位流动性手续费增长数据
         (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
             ticks.getFeeGrowthInside(tickLower, tickUpper, tick, _feeGrowthGlobal0X128, _feeGrowthGlobal1X128);
 
-        position.update(liquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128);
+        position.update(liquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128);//TODO
 
         // clear any tick data that is no longer needed
         if (liquidityDelta < 0) {
@@ -461,18 +480,20 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// @inheritdoc IUniswapV3PoolActions
     /// @dev noDelegateCall is applied indirectly via _modifyPosition
     /// 为指定的recipient/tickLower/tickUpper position增加流动性
+    /// 在core pool中，所有的positions的recipient都是NonfungiblePositionManager合约，由NonfungiblePositionManager合约统一管理LP的仓位
+    /// 此方法被LiquidityManagement.sol的addLiquidity方法调用
     function mint(
-        address recipient,
-        int24 tickLower,
-        int24 tickUpper,
-        uint128 amount,
-        bytes calldata data
+        address recipient, // NonfungiblePositionManager合约
+        int24 tickLower, // 价格下限
+        int24 tickUpper, // 价格上限
+        uint128 amount, // 要铸造的流动性数量
+        bytes calldata data // 传的abi.encode(MintCallbackData({poolKey: poolKey, payer: msg.sender})) 用abi.encode对struct MintCallbackData进行编码，编码为bytes，然后传给pool，pool用于回调
     ) external override lock returns (uint256 amount0, uint256 amount1) {
         require(amount > 0); // 流动性数量必须大于0
         (, int256 amount0Int, int256 amount1Int) =
-            _modifyPosition(
+            _modifyPosition(//TODO
                 ModifyPositionParams({
-                    owner: recipient,
+                    owner: recipient, // NonfungiblePositionManager合约
                     tickLower: tickLower,
                     tickUpper: tickUpper,
                     liquidityDelta: int256(amount).toInt128() // uint128-->int256-->int128
@@ -523,7 +544,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
     /// @inheritdoc IUniswapV3PoolActions
     /// @dev noDelegateCall is applied indirectly via _modifyPosition
-    function burn(
+    function burn(//TODO
         int24 tickLower,
         int24 tickUpper,
         uint128 amount

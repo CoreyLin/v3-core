@@ -20,7 +20,12 @@ library TickBitmap {
     /// @param self The mapping in which to flip the tick
     /// @param tick The tick to flip
     /// @param tickSpacing The spacing between usable ticks
-    function flipTick(
+
+    /// @notice 将给定tick的初始化状态从false翻转为true，反之亦然
+    /// @param self 要翻转tick的映射
+    /// @param tick 要翻转的tick
+    /// @param tickSpacing 可用tick之间的间隔
+    function flipTick(//TODO: 逻辑还没细看
         mapping(int16 => uint256) storage self,
         int24 tick,
         int24 tickSpacing

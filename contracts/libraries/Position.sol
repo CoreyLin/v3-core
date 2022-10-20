@@ -22,17 +22,20 @@ library Position {
     }
 
     /// @notice Returns the Info struct of a position, given an owner and position boundaries
+    /// 给定头寸的所有者和头寸边界，返回头寸的Info结构体
     /// @param self The mapping containing all user positions
+    /// 包含所有用户头寸的映射
     /// @param owner The address of the position owner
+    /// 头寸所有者的地址
     /// @param tickLower The lower tick boundary of the position
     /// @param tickUpper The upper tick boundary of the position
     /// @return position The position info struct of the given owners' position
     function get(
-        mapping(bytes32 => Info) storage self,
+        mapping(bytes32 => Info) storage self, // 注意：storage
         address owner,
         int24 tickLower,
         int24 tickUpper
-    ) internal view returns (Position.Info storage position) {
+    ) internal view returns (Position.Info storage position) { // 注意：storage
         position = self[keccak256(abi.encodePacked(owner, tickLower, tickUpper))];
     }
 
@@ -41,7 +44,13 @@ library Position {
     /// @param liquidityDelta The change in pool liquidity as a result of the position update
     /// @param feeGrowthInside0X128 The all-time fee growth in token0, per unit of liquidity, inside the position's tick boundaries
     /// @param feeGrowthInside1X128 The all-time fee growth in token1, per unit of liquidity, inside the position's tick boundaries
-    function update(
+
+    /// @notice 累积手续费到一个用户的头寸
+    /// @param self 要更新的单个头寸
+    /// @param liquidityDelta 由于头寸更新而导致的池流动性的变化
+    /// @param feeGrowthInside0X128 每单位流动性的token0的总费用增长，在头寸的tick边界内
+    /// @param feeGrowthInside1X128 每单位流动性的token1的总费用增长，在头寸的tick边界内
+    function update(//TODO: 紧接着看这个方法
         Info storage self,
         int128 liquidityDelta,
         uint256 feeGrowthInside0X128,
