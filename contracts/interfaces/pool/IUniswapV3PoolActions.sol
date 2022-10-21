@@ -43,6 +43,18 @@ interface IUniswapV3PoolActions {
     /// @param amount1Requested How much token1 should be withdrawn from the fees owed
     /// @return amount0 The amount of fees collected in token0
     /// @return amount1 The amount of fees collected in token1
+
+    /// @notice 收集某个头寸欠其owner的tokens
+    /// @dev 不重新计算所赚取的费用，这必须通过mint或burn任何数量的流动性完成。
+    /// Collect必须由头寸所有者调用，但recipient参数可以是其他人。如果只提取token0或token1，则可以将amount0Requested或amount1Requested设置为零。
+    /// 为了提取所有所欠的tokens，调用者可以传递任何大于实际所欠tokens的值，例如type(uint128).max。所欠的tokens可能来自累积的swap手续费或burn流动性产生的本金和手续费。
+    /// @param recipient 应该接收所收集费用的地址
+    /// @param tickLower 要收取费用的头寸的tickLower
+    /// @param tickUpper 要收费费用的头寸的tickUpper
+    /// @param amount0Requested 从所欠的费用中提取多少token0
+    /// @param amount1Requested 从所欠的费用中提取多少token1
+    /// @return amount0 实际收取的token0的数量
+    /// @return amount1 实际收取的token0的数量
     function collect(
         address recipient,
         int24 tickLower,
@@ -59,6 +71,15 @@ interface IUniswapV3PoolActions {
     /// @param amount How much liquidity to burn
     /// @return amount0 The amount of token0 sent to the recipient
     /// @return amount1 The amount of token1 sent to the recipient
+
+    /// @notice burn掉sender的流动性，并且计算头寸欠sender的tokens
+    /// @dev 可以通过传递参数amount=0调用来触发对某个头寸所欠费用的重新计算
+    /// @dev 所欠费用必须通过另一个方法collect单独收集
+    /// @param tickLower 需要burn流动性的头寸的tick的最低值
+    /// @param tickUpper 需要burn流动性的头寸的tick的最低值
+    /// @param amount 要burn多少流动性
+    /// @return amount0 发送给接收者的token0的数量
+    /// @return amount1 发送给接收者的token1的数量
     function burn(
         int24 tickLower,
         int24 tickUpper,

@@ -330,7 +330,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         Slot0 memory _slot0 = slot0; // SLOAD for gas optimization 节约gas费
 
-        position = _updatePosition(//TODO
+        // 获取头寸并用给定流动性增量（减量）更新它
+        position = _updatePosition(
             params.owner, // 此处的owner是NonfungiblePositionManager合约
             params.tickLower,
             params.tickUpper,
@@ -338,7 +339,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             _slot0.tick
         );
 
-        if (params.liquidityDelta != 0) {
+        if (params.liquidityDelta != 0) {//TODO
             if (_slot0.tick < params.tickLower) {
                 // current tick is below the passed range; liquidity can only become in range by crossing from left to
                 // right, when we'll need _more_ token0 (it's becoming more valuable) so user must provide it
@@ -396,7 +397,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         address owner,
         int24 tickLower,
         int24 tickUpper,
-        int128 liquidityDelta,
+        int128 liquidityDelta, // 当新增流动性时，liquidityDelta为正数；当减少流动性时，liquidityDelta为负数
         int24 tick
     ) private returns (Position.Info storage position) { // 注意：返回的position是storage修饰的
         // 给定头寸的所有者和头寸边界，返回头寸的Info结构体
@@ -464,14 +465,17 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
             ticks.getFeeGrowthInside(tickLower, tickUpper, tick, _feeGrowthGlobal0X128, _feeGrowthGlobal1X128);
 
-        position.update(liquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128);//TODO
+        // 累积手续费到一个用户的头寸
+        position.update(liquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128);
 
         // clear any tick data that is no longer needed
+        // 清除不再需要的tick数据
+        // 当新增流动性时，liquidityDelta为正数；当减少流动性时，liquidityDelta为负数。此处指的是减少流动性的场景，减少流动性可能引起tickLower和tickUpper的总流动性变为0.
         if (liquidityDelta < 0) {
-            if (flippedLower) {
-                ticks.clear(tickLower);
+            if (flippedLower) { // tickLower的总流动性从有到无
+                ticks.clear(tickLower); // 清除tick数据
             }
-            if (flippedUpper) {
+            if (flippedUpper) { // tickUpper的总流动性从有到无
                 ticks.clear(tickUpper);
             }
         }
@@ -490,13 +494,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         bytes calldata data // 传的abi.encode(MintCallbackData({poolKey: poolKey, payer: msg.sender})) 用abi.encode对struct MintCallbackData进行编码，编码为bytes，然后传给pool，pool用于回调
     ) external override lock returns (uint256 amount0, uint256 amount1) {
         require(amount > 0); // 流动性数量必须大于0
+        // amount0Int是LP欠池token0的金额，如果池应该支付给接收者，则为负数。此处是增加流动性，一定为正数。
+        // amount1Int是LP欠池token1的金额，如果池应该支付给接收者，则为负数。此处是增加流动性，一定为正数。
         (, int256 amount0Int, int256 amount1Int) =
-            _modifyPosition(//TODO
+            _modifyPosition( // 对一个头寸进行一些改变
                 ModifyPositionParams({
                     owner: recipient, // NonfungiblePositionManager合约
                     tickLower: tickLower,
                     tickUpper: tickUpper,
-                    liquidityDelta: int256(amount).toInt128() // uint128-->int256-->int128
+                    liquidityDelta: int256(amount).toInt128() // uint128-->int256-->int128 此处liquidityDelta一定是正数，因为是增加流动性
                 })
             );
 
@@ -517,6 +523,17 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     }
 
     /// @inheritdoc IUniswapV3PoolActions
+    /// @notice 收集某个头寸欠其owner的tokens
+    /// @dev 不重新计算所赚取的费用，这必须通过mint或burn任何数量的流动性完成。
+    /// Collect必须由头寸所有者调用，但recipient参数可以是其他人。如果只提取token0或token1，则可以将amount0Requested或amount1Requested设置为零。
+    /// 为了提取所有所欠的tokens，调用者可以传递任何大于实际所欠tokens的值，例如type(uint128).max。所欠的tokens可能来自累积的swap手续费或burn流动性产生的本金和手续费。
+    /// @param recipient 应该接收所收集费用的地址
+    /// @param tickLower 要收取费用的头寸的tickLower
+    /// @param tickUpper 要收费费用的头寸的tickUpper
+    /// @param amount0Requested 从所欠的费用中提取多少token0
+    /// @param amount1Requested 从所欠的费用中提取多少token1
+    /// @return amount0 实际收取的token0的数量
+    /// @return amount1 实际收取的token0的数量
     function collect(
         address recipient,
         int24 tickLower,
@@ -525,13 +542,16 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         uint128 amount1Requested
     ) external override lock returns (uint128 amount0, uint128 amount1) {
         // we don't need to checkTicks here, because invalid positions will never have non-zero tokensOwed{0,1}
+        // 我们不需要在这里checkTicks，因为无效的头寸永远不会有非零的tokensOwed{0,1}
+        // 根据头寸的所有者，tickLower，tickUpper获取storage position
         Position.Info storage position = positions.get(msg.sender, tickLower, tickUpper);
 
+        // 获取实际收取的token0和token1的数量
         amount0 = amount0Requested > position.tokensOwed0 ? position.tokensOwed0 : amount0Requested;
         amount1 = amount1Requested > position.tokensOwed1 ? position.tokensOwed1 : amount1Requested;
 
         if (amount0 > 0) {
-            position.tokensOwed0 -= amount0;
+            position.tokensOwed0 -= amount0; // 头寸的tokensOwed0相应减少，因为amount0要被转给position所有者或者其他人
             TransferHelper.safeTransfer(token0, recipient, amount0);
         }
         if (amount1 > 0) {
@@ -544,7 +564,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
     /// @inheritdoc IUniswapV3PoolActions
     /// @dev noDelegateCall is applied indirectly via _modifyPosition
-    function burn(//TODO
+    /// @notice burn掉sender的流动性，并且计算头寸欠sender的tokens
+    /// @dev 可以通过传递参数amount=0调用来触发对某个头寸所欠费用的重新计算
+    /// @dev 所欠费用必须通过另一个方法collect单独收集
+    /// @param tickLower 需要burn流动性的头寸的tick的最低值
+    /// @param tickUpper 需要burn流动性的头寸的tick的最低值
+    /// @param amount 要burn多少流动性
+    /// @return amount0 发送给接收者的token0的数量
+    /// @return amount1 发送给接收者的token1的数量
+    function burn(
         int24 tickLower,
         int24 tickUpper,
         uint128 amount
@@ -555,15 +583,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                     owner: msg.sender,
                     tickLower: tickLower,
                     tickUpper: tickUpper,
-                    liquidityDelta: -int256(amount).toInt128()
+                    liquidityDelta: -int256(amount).toInt128() // 移除流动性，liquidityDelta就需要为负数
                 })
             );
 
-        amount0 = uint256(-amount0Int);
+        amount0 = uint256(-amount0Int); // amount0Int为LP欠池token0的金额，如果池应该支付给接收者，则为负数。此处负负得正，然后int256-->uint256
         amount1 = uint256(-amount1Int);
 
         if (amount0 > 0 || amount1 > 0) {
-            (position.tokensOwed0, position.tokensOwed1) = (
+            (position.tokensOwed0, position.tokensOwed1) = ( // 更新token0/token1中欠头寸所有者即NonfungiblePositionManager的金额（本金+手续费），金额增加了
                 position.tokensOwed0 + uint128(amount0),
                 position.tokensOwed1 + uint128(amount1)
             );

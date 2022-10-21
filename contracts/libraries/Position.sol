@@ -20,7 +20,7 @@ library Position {
         uint256 feeGrowthInside0LastX128;
         uint256 feeGrowthInside1LastX128;
         // the fees owed to the position owner in token0/token1
-        // token0/token1中欠头寸所有者的手续费
+        // token0/token1中欠头寸所有者的金额（本金+手续费）
         uint128 tokensOwed0;
         uint128 tokensOwed1;
     }

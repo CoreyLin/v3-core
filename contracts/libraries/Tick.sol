@@ -76,11 +76,11 @@ library Tick {
     /// @param tickLower 头寸的下tick边界
     /// @param tickUpper 头寸的上tick边界
     /// @param tickCurrent 当前tick
-    /// @param feeGrowthGlobal0X128 每单位流动性的全局费用增长，以token0为单位
-    /// @param feeGrowthGlobal1X128 每单位流动性的全局费用增长，以token1为单位
+    /// @param feeGrowthGlobal0X128 每单位流动性的全局手续费增长，以token0为单位
+    /// @param feeGrowthGlobal1X128 每单位流动性的全局手续费增长，以token1为单位
     /// @return feeGrowthInside0X128 每单位流动性的token0的总手续费增长，在头寸的tick边界内
     /// @return feeGrowthInside1X128 每单位流动性的token1的总手续费增长，在头寸的tick边界内
-    function getFeeGrowthInside(//TODO: 逻辑还没细看
+    function getFeeGrowthInside(
         mapping(int24 => Tick.Info) storage self,
         int24 tickLower,
         int24 tickUpper,
@@ -88,10 +88,12 @@ library Tick {
         uint256 feeGrowthGlobal0X128,
         uint256 feeGrowthGlobal1X128
     ) internal view returns (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) {
-        Info storage lower = self[tickLower];
-        Info storage upper = self[tickUpper];
+        Info storage lower = self[tickLower]; // 取出tickLower的Info
+        Info storage upper = self[tickUpper]; // 取出tickUpper的Info
 
+        // 以下的计算逻辑，只要画图之后，就很好理解
         // calculate fee growth below
+        // 计算“下面”，即tickLower左边的手续费累积
         uint256 feeGrowthBelow0X128;
         uint256 feeGrowthBelow1X128;
         if (tickCurrent >= tickLower) {
@@ -103,6 +105,7 @@ library Tick {
         }
 
         // calculate fee growth above
+        // 计算“上面”，即tickUpper右边的手续费累积
         uint256 feeGrowthAbove0X128;
         uint256 feeGrowthAbove1X128;
         if (tickCurrent < tickUpper) {
@@ -113,6 +116,7 @@ library Tick {
             feeGrowthAbove1X128 = feeGrowthGlobal1X128 - upper.feeGrowthOutside1X128;
         }
 
+        // 总的手续费累积，减去tickLower左边的手续费累积和tickUpper右边的手续费累积，就剩tickLower和tickUpper之间的手续费累积
         feeGrowthInside0X128 = feeGrowthGlobal0X128 - feeGrowthBelow0X128 - feeGrowthAbove0X128;
         feeGrowthInside1X128 = feeGrowthGlobal1X128 - feeGrowthBelow1X128 - feeGrowthAbove1X128;
     }
@@ -147,7 +151,7 @@ library Tick {
     function update(
         mapping(int24 => Tick.Info) storage self,
         int24 tick,
-        int24 tickCurrent,
+        int24 tickCurrent, // 此参数只用在了tick的流动性从无到有的情况下
         int128 liquidityDelta,
         uint256 feeGrowthGlobal0X128,
         uint256 feeGrowthGlobal1X128,
@@ -169,10 +173,11 @@ library Tick {
 
         if (liquidityGrossBefore == 0) { // 如果原先该tick的流动性为0,即未初始化
             // by convention, we assume that all growth before a tick was initialized happened _below_ the tick
-            // 按照惯例，我们假设在tick初始化之前的所有增长都发生在tick的“下面”
+            // 按照惯例，我们假设在tick初始化之前的所有增长都发生在tick的“下面”，即左边
             // 如果将被更新的tick < 当前tick，即被更新的tick在当前tick的左边，那么就把当前积累的一些状态变量赋给tick的outside属性
             // 此处得出一个结论，当前tick右边的就是outside的
             if (tick <= tickCurrent) { // 如果将被更新的tick < 当前tick，即被更新的tick在当前tick的左边
+                // 如果 tick>tickCurrent，那么以下这些outside属性全都是默认的0,即对于本tick来说，没有outside的值
                 info.feeGrowthOutside0X128 = feeGrowthGlobal0X128; // 每单位流动性的全部时间全局费用增长，以token0为单位
                 info.feeGrowthOutside1X128 = feeGrowthGlobal1X128; // 每单位流动性的全部时间全局费用增长，以token1为单位
                 info.secondsPerLiquidityOutsideX128 = secondsPerLiquidityCumulativeX128; // 池中全部时间每单位流动性的秒数累积
@@ -187,14 +192,20 @@ library Tick {
         // when the lower (upper) tick is crossed left to right (right to left), liquidity must be added (removed)
         // 当下(上)tick从左到右(从右到左)交叉时，流动性必须添加(删除)
         info.liquidityNet = upper
-            // 注意liquidityNet类型是有符号整数，当为正数时说明从左到右应该增加，当为负数时说明从左到右应该减去
-            ? int256(info.liquidityNet).sub(liquidityDelta).toInt128() // 从左到右穿过upper tick时，增加的流动性为 info.liquidityNet-liquidityDelta，即增加了一个负数，就等于减去了一个正数
+            // 注意liquidityNet类型是有符号整数，当新增流动性时，liquidityDelta为正数；当减少流动性时，liquidityDelta为负数
+            // 以新增流动性且流动性从无到有的场景为例，liquidityDelta为正数，那么更新后的info.liquidityNet为-liquidityDelta，即从左到右穿过upper tick时，增加的流动性为 -liquidityDelta，即增加了一个负数，就等于减去了一个正数
+            // 以移除流动性为例，移除之前，upper tick的liquidityNet为-6,然后全部移除，传入的liquidityDelta为-6, -6-(-6)=0，即移除后upper tick的liquidityNet为0了
+            ? int256(info.liquidityNet).sub(liquidityDelta).toInt128()
             : int256(info.liquidityNet).add(liquidityDelta).toInt128(); // 从左到右穿过lower tick时，增加的流动性为 info.liquidityNet+liquidityDelta
     }
 
     /// @notice Clears tick data
     /// @param self The mapping containing all initialized tick information for initialized ticks
     /// @param tick The tick that will be cleared
+
+    /// @notice 清除tick数据
+    /// @param self 包含所有已初始化tick的tick信息的映射
+    /// @param tick 将被清除的tick
     function clear(mapping(int24 => Tick.Info) storage self, int24 tick) internal {
         delete self[tick];
     }
