@@ -94,6 +94,10 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     ProtocolFees public override protocolFees;
 
     /// @inheritdoc IUniswapV3PoolState
+    /// @notice The currently in range liquidity available to the pool
+    /// 可用于池的当前范围内的流动性
+    /// @dev This value has no relationship to the total liquidity across all ticks
+    /// 这个值与所有ticks的总流动性没有关系
     uint128 public override liquidity;
 
     /// @inheritdoc IUniswapV3PoolState
@@ -146,10 +150,19 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// @dev Get the pool's balance of token0
     /// @dev This function is gas optimized to avoid a redundant extcodesize check in addition to the returndatasize
     /// check
+    /// @dev 获取pool的token0的余额
+    /// @dev 这个函数是gas优化的，以避免除了returndatasize检查之外的多余的extcodesize检查
     function balance0() private view returns (uint256) {
+        // The staticcall is a security improvement, as it allows a contract to call another contract (or itself) without modifying the state.
+        // If you try to call something in another contract with staticcall, and that contract attempts to change state then an exception gets thrown and the call fails.
+        // staticcall works in a similar way as a normal call (without any value (sending eth) as this would change state). But when staticcall is used, the EVM has a STATIC flag set to true. Then, if any state modification is attempted, an exception is thrown. Once the staticcall returns, the flag is turned off.
+        // [success, returnData] = aContratAddress.staticcall(bytesToSend)
+        // 详细参考 https://cryptoguide.dev/post/guide-to-solidity's-staticcall-and-how-to-use-it/
+        // 此处为什么要用staticcall: https://ethereum.stackexchange.com/questions/135922/what-is-need-to-use-staticcall-and-encodewithselector-for-fetching-the-balance
         (bool success, bytes memory data) =
             token0.staticcall(abi.encodeWithSelector(IERC20Minimal.balanceOf.selector, address(this)));
         require(success && data.length >= 32);
+        // bytes转uint256的方法：abi.decode
         return abi.decode(data, (uint256));
     }
 
@@ -339,15 +352,19 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             _slot0.tick
         );
 
-        if (params.liquidityDelta != 0) {//TODO
+        // 如果有流动性的增减
+        if (params.liquidityDelta != 0) {
+            // 当前价格小于tickLower，注意：统一以token0价格为准，P=reserve1/reserve0，token0是横坐标，token1是纵坐标
             if (_slot0.tick < params.tickLower) {
                 // current tick is below the passed range; liquidity can only become in range by crossing from left to
                 // right, when we'll need _more_ token0 (it's becoming more valuable) so user must provide it
+                // 当前tick低于position的范围;流动性只能通过从左到右交叉进入范围，当我们需要_more_ token0时(它变得更有价值)，所以用户必须提供它
                 amount0 = SqrtPriceMath.getAmount0Delta(
                     TickMath.getSqrtRatioAtTick(params.tickLower),
                     TickMath.getSqrtRatioAtTick(params.tickUpper),
                     params.liquidityDelta
                 );
+            // Pa<=P<Pb，Pa是价格下限，P是当前价格，Pb是价格上限
             } else if (_slot0.tick < params.tickUpper) {
                 // current tick is inside the passed range
                 uint128 liquidityBefore = liquidity; // SLOAD for gas optimization
@@ -363,16 +380,18 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                 );
 
                 amount0 = SqrtPriceMath.getAmount0Delta(
-                    _slot0.sqrtPriceX96,
-                    TickMath.getSqrtRatioAtTick(params.tickUpper),
+                    _slot0.sqrtPriceX96, // 当前价格P
+                    TickMath.getSqrtRatioAtTick(params.tickUpper), // 价格上限Pb
                     params.liquidityDelta
                 );
                 amount1 = SqrtPriceMath.getAmount1Delta(
-                    TickMath.getSqrtRatioAtTick(params.tickLower),
-                    _slot0.sqrtPriceX96,
+                    TickMath.getSqrtRatioAtTick(params.tickLower), // 价格下限Pa
+                    _slot0.sqrtPriceX96, // 当前价格P
                     params.liquidityDelta
                 );
 
+                // pool的liquidity属性代表“The currently in range liquidity available to the pool”
+                // 如果Pa<=P<Pb，说明此position的流动性在范围内，是当前可用的流动性，所以会引起池子当前总的可用的流动性的增减
                 liquidity = LiquidityMath.addDelta(liquidityBefore, params.liquidityDelta);
             } else {
                 // current tick is above the passed range; liquidity can only become in range by crossing from right to
@@ -398,7 +417,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         int24 tickLower,
         int24 tickUpper,
         int128 liquidityDelta, // 当新增流动性时，liquidityDelta为正数；当减少流动性时，liquidityDelta为负数
-        int24 tick
+        int24 tick // 池子当前的价格
     ) private returns (Position.Info storage position) { // 注意：返回的position是storage修饰的
         // 给定头寸的所有者和头寸边界，返回头寸的Info结构体
         position = positions.get(owner, tickLower, tickUpper);
@@ -506,6 +525,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                 })
             );
 
+        // amount0,amount1是LP应该付出的金额，一定是正数，所以把int256转为uint256
         amount0 = uint256(amount0Int); // int256-->uint256
         amount1 = uint256(amount1Int);
 
@@ -670,6 +690,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
     /// @inheritdoc IUniswapV3PoolActions
     /// 用token0换token1，或用token1换token0
+    // TODO 好好看看swap，是核心逻辑，关注各个状态变量是如何更新的
     function swap(
         address recipient,
         bool zeroForOne,

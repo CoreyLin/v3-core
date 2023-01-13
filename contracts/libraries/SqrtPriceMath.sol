@@ -150,17 +150,28 @@ library SqrtPriceMath {
     /// @param liquidity The amount of usable liquidity
     /// @param roundUp Whether to round the amount up or down
     /// @return amount0 Amount of token0 required to cover a position of size liquidity between the two passed prices
+
+    /// 获取两个价格之间的amount0增量
+    /// @dev 计算liquidity / sqrt(lower) - liquidity / sqrt(upper)，也就是liquidity * (sqrt(upper) - sqrt(lower)) / (sqrt(upper) * sqrt(lower))
+    /// @param sqrtRatioAX96 平方根价格
+    /// @param sqrtRatioBX96 另一个平方根价格
+    /// @param liquidity 可用流动性的数量
+    /// @param roundUp 是否round up，增加流动性时，为true，即要求LP多付出一点点，移除流动性时，为false，即池子少付出一点点，避免坏账
+    /// @return amount0 token0的数量，用于覆盖两个传递价格之间的流动性头寸
     function getAmount0Delta(
         uint160 sqrtRatioAX96,
         uint160 sqrtRatioBX96,
         uint128 liquidity,
         bool roundUp
     ) internal pure returns (uint256 amount0) {
+        // 对价格进行排序，确保sqrtRatioAX96<=sqrtRatioBX96
         if (sqrtRatioAX96 > sqrtRatioBX96) (sqrtRatioAX96, sqrtRatioBX96) = (sqrtRatioBX96, sqrtRatioAX96);
 
-        uint256 numerator1 = uint256(liquidity) << FixedPoint96.RESOLUTION;
-        uint256 numerator2 = sqrtRatioBX96 - sqrtRatioAX96;
+        // 两个分子
+        uint256 numerator1 = uint256(liquidity) << FixedPoint96.RESOLUTION; // liquidity
+        uint256 numerator2 = sqrtRatioBX96 - sqrtRatioAX96; // sqrt(upper) - sqrt(lower)
 
+        // 要求较低的价格至少是大于0的，不能为0
         require(sqrtRatioAX96 > 0);
 
         return

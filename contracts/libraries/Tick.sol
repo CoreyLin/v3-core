@@ -165,7 +165,7 @@ library Tick {
         Tick.Info storage info = self[tick]; // 注意是storage
 
         uint128 liquidityGrossBefore = info.liquidityGross; // 引用该tick的总头寸流动性
-        uint128 liquidityGrossAfter = LiquidityMath.addDelta(liquidityGrossBefore, liquidityDelta); // 该tick新增后的总流动性
+        uint128 liquidityGrossAfter = LiquidityMath.addDelta(liquidityGrossBefore, liquidityDelta); // 该tick新增或者减少后的总流动性
 
         require(liquidityGrossAfter <= maxLiquidity, 'LO'); // 该tick新增后的总流动性必须小于单个tick的最大流动性分配
 
