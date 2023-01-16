@@ -71,7 +71,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         uint16 observationCardinalityNext;
         // the current protocol fee as a percentage of the swap fee taken on withdrawal
         // represented as an integer denominator (1/x)%
-        // 当前协议费用占提取swap费用的百分比，表示为整数分母(1/x)%
+        // 当前协议费用占提取时swap手续费的百分比，表示为整数分母(1/x)%
         uint8 feeProtocol;
         // whether the pool is locked
         // 池是否被锁定
@@ -129,6 +129,11 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     constructor() {
         int24 _tickSpacing;
         (factory, token0, token1, fee, _tickSpacing) = IUniswapV3PoolDeployer(msg.sender).parameters(); // 反向查询 UniswapV3Factory 中的 parameters 值来进行初始变量的赋值
+        // tickSpacing是在factory合约里写死的，分为三个梯度
+        // 1.手续费0.05%：tickSpacing为10
+        // 2.手续费0.3%：tickSpacing为60
+        // 3.手续费0.1%：tickSpacing为200
+        // 手续费越高，tickSpacing越大。因为手续费越低的pool，往往资产价格越稳定，价格波动不大，所以tickSpacing就需要小一些，而手续费越高的pool，资产价格波动大，所以tickSpacing可以大一些
         tickSpacing = _tickSpacing;
 
         maxLiquidityPerTick = Tick.tickSpacingToMaxLiquidityPerTick(_tickSpacing);
@@ -692,8 +697,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// 用token0换token1，或用token1换token0
     // TODO 好好看看swap，是核心逻辑，关注各个状态变量是如何更新的
     function swap(
-        address recipient,
-        bool zeroForOne,
+        address recipient, // 受益人是谁
+        bool zeroForOne, // 是否是token0换token1
         int256 amountSpecified, // 交换的数量，它隐式地将交换配置为精确输入(正数)或精确输出(负数)。为正，则为精确输入；为负，则为精确输出。
         uint160 sqrtPriceLimitX96, // 交换后的token0的价格限制
         bytes calldata data
@@ -705,20 +710,22 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         require(slot0Start.unlocked, 'LOK'); // 处于非锁定状态，防止可重入攻击，防止交易过程中回调到合约中其他的函数中修改状态变量
         require(
             zeroForOne
-                // 如果token0换token1，则交换后token0会贬值，sqrtPriceLimitX96是交换后的价格，所以sqrtPriceLimitX96应该小于池子的当前价格。注意：以token0计价。
+                // 如果token0换token1，则交换后token0会贬值，sqrtPriceLimitX96是交换后的价格，所以sqrtPriceLimitX96应该小于池子的当前价格slot0Start.sqrtPriceX96。注意：以token0计价。
+                // TickMath.MIN_SQRT_RATIO是从#getSqrtRatioAtTick返回的最小值。等价于getSqrtRatioAtTick(MIN_TICK)
                 ? sqrtPriceLimitX96 < slot0Start.sqrtPriceX96 && sqrtPriceLimitX96 > TickMath.MIN_SQRT_RATIO
-                // 如果token1换token0，则交换后token0会升值，sqrtPriceLimitX96是交换后的价格，所以sqrtPriceLimitX96应该大于池子的当前价格。注意：以token0计价。
+                // 如果token1换token0，则交换后token0会升值，sqrtPriceLimitX96是交换后的价格，所以sqrtPriceLimitX96应该大于池子的当前价格slot0Start.sqrtPriceX96。注意：以token0计价。
                 : sqrtPriceLimitX96 > slot0Start.sqrtPriceX96 && sqrtPriceLimitX96 < TickMath.MAX_SQRT_RATIO,
             'SPL'
         );
 
-        slot0.unlocked = false; // 加锁
+        slot0.unlocked = false; // 加锁，防止可重入攻击
 
         // 缓存交易前的数据，节省gas
         SwapCache memory cache =
             SwapCache({
-                liquidityStart: liquidity, // 可用于池的当前范围内的流动性，这个值与所有ticks的总流动性没有关系
+                liquidityStart: liquidity, // liquidity是状态变量，代表可用于池的当前范围内的流动性，这个值与所有ticks的总流动性没有关系
                 blockTimestamp: _blockTimestamp(), // 32位的区块时间戳
+                // feeProtocol表示当前协议费用占提取时swap手续费的百分比，表示为整数分母(1/x)%
                 feeProtocol: zeroForOne ? (slot0Start.feeProtocol % 16) : (slot0Start.feeProtocol >> 4),//TODO 这一步不懂
                 secondsPerLiquidityCumulativeX128: 0, // 每单位流动性累加器的秒的当前值，只在经过初始化的tick时计算
                 tickCumulative: 0, // tick累加器的当前值，仅在经过初始化的tick时计算
@@ -735,7 +742,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                 sqrtPriceX96: slot0Start.sqrtPriceX96, // 当前平方根价格，即池子的当前价格
                 tick: slot0Start.tick, // 与当前价格相关的tick
                 feeGrowthGlobalX128: zeroForOne ? feeGrowthGlobal0X128 : feeGrowthGlobal1X128, // input token的全局手续费增长。在本次swap发生前已经积累了一些。
-                protocolFee: 0, // 作为协议费用已支付的输入token的数量。注意：fee都是用input token计算
+                protocolFee: 0, // 作为协议费用已支付的输入token的数量。注意：fee都是用input token计算，比如token0换token1,那输入token就是token0
                 liquidity: cache.liquidityStart // 可用于池的当前范围内的流动性，这个值与所有ticks的总流动性没有关系
             });
         // 上述代码都是交易前的准备工作
@@ -743,14 +750,20 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         // continue swapping as long as we haven't used the entire input/output and haven't reached the price limit
         // 只要我们没有使用完所有输入/输出，并且没有达到价格限制，就继续交换
         while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != sqrtPriceLimitX96) { // 只要交换的金额还没用完，以及池子的价格还没达到指定的价格限制
-            StepComputations memory step;//TODO
+            // 每个while循环就新初始化一个StepComputations，代表一个计算步骤。有可能一个swap会包含多个计算步骤。
+            StepComputations memory step;
 
+            // 把SwapState的当前价格赋给这个step的开始价格，由于SwapState初始化的时候，sqrtPriceX96是池子的当前价格，所以，第一次while循环的时候，step.sqrtPriceStartX96就是池子的当前价格
+            // 后续随着while循环的进行，state.sqrtPriceX96就会发生变化，不再是池子的当前价格，会发生偏离
             step.sqrtPriceStartX96 = state.sqrtPriceX96;
 
-            (step.tickNext, step.initialized) = tickBitmap.nextInitializedTickWithinOneWord(
-                state.tick,
-                tickSpacing,
-                zeroForOne
+            // tickBitmap就是pool的一个状态变量
+            // mapping(int16 => uint256) public override tickBitmap;
+            // nextInitializedTickWithinOneWord返回与给定tick的左边(小于或等于)或右边(大于)的tick包含在同一个word(或相邻word)中的下一个初始化的tick，注意：返回的可以是已经初始化的tick，也可以是还没有初始化的tick
+            (step.tickNext, step.initialized) = tickBitmap.nextInitializedTickWithinOneWord(//TODO
+                state.tick, // SwapState的当前tick，随着循环的进行，在进行变化，初始值为池子的当前tick
+                tickSpacing, // 是一个不可变状态变量，pool初始化的时候就确定了。1.手续费0.05%：tickSpacing为10 2.手续费0.3%：tickSpacing为60 3.手续费0.1%：tickSpacing为200
+                zeroForOne // 如果是token0换token1，意味着token0价格下降，那么我们要找的就是给定tick左边的tick，即价格更低的tick
             );
 
             // ensure that we do not overshoot the min/max tick, as the tick bitmap is not aware of these bounds

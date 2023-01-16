@@ -10,6 +10,7 @@ import './UniswapV3Pool.sol';
 
 /// @title Canonical Uniswap V3 factory
 /// @notice Deploys Uniswap V3 pools and manages ownership and control over pool protocol fees
+// factory继承了UniswapV3PoolDeployer，即继承了parameters方法和deploy方法，deploy方法是internal方法
 contract UniswapV3Factory is IUniswapV3Factory, UniswapV3PoolDeployer, NoDelegateCall {
     /// @inheritdoc IUniswapV3Factory
     address public override owner;

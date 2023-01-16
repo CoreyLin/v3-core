@@ -15,7 +15,7 @@ contract UniswapV3PoolDeployer is IUniswapV3PoolDeployer {
     }
 
     /// @inheritdoc IUniswapV3PoolDeployer
-    Parameters public override parameters; // 状态变量
+    Parameters public override parameters; // 状态变量，同时也是一个public方法，可以被调用
 
     /// @dev Deploys a pool with the given parameters by transiently setting the parameters storage slot and then
     /// clearing it after deploying the pool.
