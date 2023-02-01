@@ -54,7 +54,7 @@ library TickBitmap {
     /// @return initialized Whether the next tick is initialized, as the function only searches within up to 256 ticks
 
     /// @notice 返回与给定tick的左边(小于或等于)或右边(大于)的tick包含在同一个word(或相邻word)中的下一个初始化的tick，注意：返回的可以是已经初始化的tick，也可以是还没有初始化的tick
-    /// @param self 用于计算下一个已初始化tick的映射，即mapping
+    /// @param self 用于计算下一个已初始化tick的映射，即mapping，键代表经过了压缩之后的tick，即compressed，打个比方，如果tick是50到59之间的任何一个数，那么compressed都是5
     /// @param tick 开始的tick
     /// @param tickSpacing 可用tick之间的间距
     /// @param lte 是否搜索下一个已初始化的左边tick(小于或等于起始tick)，如果搜索左边tick，则为true，如果搜索右边tick，则为false
@@ -86,16 +86,34 @@ library TickBitmap {
             // 假设bitPos为2,那么1 << bitPos为4,mask为7，换算成二进制就是111, bitPos 2刚好对应最左边那个1的插槽
             // 假设bitPos为3,那么1 << bitPos为8,mask为15，换算成二进制就是1111, bitPos 3刚好对应最左边那个1的插槽
             // 所以，mask就是把bitPos对应的插槽的右边全部填充1
+            // 注意：mask的类型是uint256，有256位
             uint256 mask = (1 << bitPos) - 1 + (1 << bitPos);
-            uint256 masked = self[wordPos] & mask;//TODO
+            // &是位与操作，如果bitPos为2,那么mask就是111,就用self[wordPos]和111做位与操作
+            // 如果self[wordPos]最低三位为000,那么位与操作的结果就是0，那么initialized为false，未初始化
+            // 如果self[wordPos]最低三位只要有一位为1,那么位与操作的结果就是非0,那么initialized为true，已初始化
+            uint256 masked = self[wordPos] & mask;
 
             // if there are no initialized ticks to the right of or at the current tick, return rightmost in the word
             initialized = masked != 0;
             // overflow/underflow is possible, but prevented externally by limiting both tickSpacing and tick
+            // 如果已初始化，以tick为258举个例子，bitPos为2,mask为111,如果self[wordPos]的最低三位是001，那么masked=1，那么masked的最高位索引为0,那么(compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing = (25-(2-0))*10=230,和tcik相差28
+            // 如果self[wordPos]的最低三位是011，那么masked=11，那么masked的最高位索引为1,那么(compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing = (25-(2-1))*10=240，和tick相差18
+            // 如果self[wordPos]的最低三位是111，那么masked=111，那么masked的最高位索引为2,那么(compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing = (25-(2-2))*10=250，和tick相差8
+            // 如果已初始化，以tick为260举个例子，compressed为26,bitPos为4,mask为11111，如果self[wordPos]的最低五位是00001，那么masked=1，那么masked的最高位索引为0,那么(compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing = (26-(4-0))*10=220,和tick相差40
+            // 如果self[wordPos]的最低五位是00011，那么masked=11，那么masked的最高位索引为1,那么(compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing = (26-(4-1))*10=230,和tick相差30
+            // 如果self[wordPos]的最低五位是00111，那么masked=111，那么masked的最高位索引为2,那么(compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing = (26-(4-2))*10=240,和tick相差20
+            // 如果self[wordPos]的最低五位是01111，那么masked=1111，那么masked的最高位索引为3,那么(compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing = (26-(4-3))*10=250,和tick相差10
+            // 如果self[wordPos]的最低五位是11111，那么masked=11111，那么masked的最高位索引为4,那么(compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing = (26-(4-4))*10=260,和tick相差0,即相等
+            // 可以看出来，self[wordPos]的最低5位，左边有几个0,那么next tick就和传入tick相差几十，如果最左边是1,那么next tick就和传入tick是一个tick，即小于等于
+            // 如果没有初始化，举三个例子：
+            // 如果tick为50,tickSpacing为10,compressed为5,wordPos为0,bitPoS为5,那么(compressed - int24(bitPos)) * tickSpacing = (5-5)*10=0，即下一个tick是0
+            // 如果tick为258,tickSpacing为10,compressed为25,wordPos为1,bitPoS为2,那么(compressed - int24(bitPos)) * tickSpacing = (25-2)*10=230，即下一个tick是230
+            // TODO：无法理解为什么tick 258的next tick是230,也无法理解tick 50的next tick是0,背后的原理是什么？
+            // 如果tick为260,tickSpacing为10,compressed为26,wordPos为1,bitPoS为4,那么(compressed - int24(bitPos)) * tickSpacing = (26-4)*10=220，即下一个tick是220
             next = initialized
                 ? (compressed - int24(bitPos - BitMath.mostSignificantBit(masked))) * tickSpacing
                 : (compressed - int24(bitPos)) * tickSpacing;
-        } else {
+        } else {//TODO
             // start from the word of the next tick, since the current tick state doesn't matter
             (int16 wordPos, uint8 bitPos) = position(compressed + 1);
             // all the 1s at or to the left of the bitPos
