@@ -25,7 +25,7 @@ library SqrtPriceMath {
     /// @param amount How much of token0 to add or remove from virtual reserves
     /// @param add Whether to add or remove the amount of token0
     /// @return The price after adding or removing amount, depending on add
-    function getNextSqrtPriceFromAmount0RoundingUp(
+    function getNextSqrtPriceFromAmount0RoundingUp(//TODO
         uint160 sqrtPX96,
         uint128 liquidity,
         uint256 amount,
@@ -65,7 +65,7 @@ library SqrtPriceMath {
     /// @param amount How much of token1 to add, or remove, from virtual reserves
     /// @param add Whether to add, or remove, the amount of token1
     /// @return The price after adding or removing `amount`
-    function getNextSqrtPriceFromAmount1RoundingDown(
+    function getNextSqrtPriceFromAmount1RoundingDown(//TODO
         uint160 sqrtPX96,
         uint128 liquidity,
         uint256 amount,
@@ -103,12 +103,21 @@ library SqrtPriceMath {
     /// @param amountIn How much of token0, or token1, is being swapped in
     /// @param zeroForOne Whether the amount in is token0 or token1
     /// @return sqrtQX96 The price after adding the input amount to token0 or token1
+
+    /// @notice 在给定token0或token1 amountin的情况下获取下一个根号价格
+    /// @dev 如果价格或流动性为0，或者如果下一个价格超出界限，则抛出异常
+    /// @param sqrtPX96 起始价格，即不考虑amountin之前的价格，即swap之前的价格
+    /// @param liquidity 可用流动性的数量
+    /// @param amountIn 有多少token0或token1被swapped in
+    /// @param zeroForOne 是否token0交换token1
+    /// @return sqrtQX96 将amountin加到token0或token1后的token0价格
     function getNextSqrtPriceFromInput(
         uint160 sqrtPX96,
         uint128 liquidity,
         uint256 amountIn,
         bool zeroForOne
     ) internal pure returns (uint160 sqrtQX96) {
+        // 前置条件判断
         require(sqrtPX96 > 0);
         require(liquidity > 0);
 
@@ -126,6 +135,14 @@ library SqrtPriceMath {
     /// @param amountOut How much of token0, or token1, is being swapped out
     /// @param zeroForOne Whether the amount out is token0 or token1
     /// @return sqrtQX96 The price after removing the output amount of token0 or token1
+
+    /// @notice 在给定token0或token1的amountout的情况下获取下一个平方根价格
+    /// @dev 如果价格或流动性为0或下一个价格超出范围则抛出异常
+    /// @param sqrtPX96 起始价格
+    /// @param liquidity 可用流动性的数量
+    /// @param amountOut 有多少token0或token1被swapped out
+    /// @param zeroForOne token0交换token1还是token1交换token0
+    /// @return sqrtQX96 swap后的价格
     function getNextSqrtPriceFromOutput(
         uint160 sqrtPX96,
         uint128 liquidity,
@@ -190,7 +207,7 @@ library SqrtPriceMath {
     /// @param liquidity The amount of usable liquidity
     /// @param roundUp Whether to round the amount up, or down
     /// @return amount1 Amount of token1 required to cover a position of size liquidity between the two passed prices
-    function getAmount1Delta(
+    function getAmount1Delta(//TODO
         uint160 sqrtRatioAX96,
         uint160 sqrtRatioBX96,
         uint128 liquidity,

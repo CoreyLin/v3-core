@@ -762,7 +762,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             // mapping(int16 => uint256) public override tickBitmap;
             // nextInitializedTickWithinOneWord返回与给定tick的左边(小于或等于)或右边(大于)的tick包含在同一个word(或相邻word)中的下一个初始化的tick，注意：返回的可能是已经初始化的tick，也可能是还没有初始化的tick
             // 详细的可以直接看nextInitializedTickWithinOneWord方法的注释
-            (step.tickNext, step.initialized) = tickBitmap.nextInitializedTickWithinOneWord(//TODO
+            (step.tickNext, step.initialized) = tickBitmap.nextInitializedTickWithinOneWord(
                 state.tick, // SwapState的当前tick，随着循环的进行，在进行变化，初始值为池子的当前tick
                 tickSpacing, // 是一个不可变状态变量，pool初始化的时候就确定了。1.手续费0.05%：tickSpacing为10 2.手续费0.3%：tickSpacing为60 3.手续费0.1%：tickSpacing为200
                 zeroForOne // 如果是token0换token1，意味着token0价格下降，那么我们要找的就是给定tick左边的tick，即价格更低的tick
@@ -781,8 +781,13 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.tickNext);
 
             // compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
-            // 计算交换到目标tick、或者价格限制、或者input/output耗尽的点所需要交换的value
-            (state.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(//TODO
+            // 计算得到这一次swap step对应的：
+            // 1.sqrtRatioNextX96 交换amountin/amountout后的价格，不超过目标价格sqrtRatioTargetX96。把这个值赋给state.sqrtPriceX96，适用于多次循环。
+            // 2.amountIn 根据交换方向，token0或token1的swapped in数量
+            // 3.amountOut 根据交换方向，trader接收到的token0或token1的数量
+            // 4.feeAmount 将被作为手续费的amountin
+            // 2,3,4都被赋给本次swap step，只适用于本次循环
+            (state.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(
                 state.sqrtPriceX96, // SwapState初始化的时候，sqrtPriceX96是池子的当前价格，后续随着while循环的进行，state.sqrtPriceX96就会发生变化，不再是池子的当前价格，会发生偏离
                 // sqrtPriceLimitX96是输入参数，代表交换后的token0的价格限制
                 // 如果zeroForOne为true，那么token0降价；反之token0涨价
@@ -797,23 +802,34 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                 fee // 只可能是0.05%,0.3%,0.1%
             );
 
-            if (exactInput) {
+            // 更新state的amountSpecifiedRemaining和amountCalculated，即amountin和amountout或者amountout和amountin
+            if (exactInput) { // 精确输入的场景
+                // 更新state变量的amountSpecifiedRemaining，减去这次swap step的amountIn和手续费。有可能为0,也有可能还有剩。
                 state.amountSpecifiedRemaining -= (step.amountIn + step.feeAmount).toInt256();
+                // state.amountCalculated的初始值是0,每一次循环都要进行累积
+                // 如果是精准输入，那么每次累积step.amountOut，注意，每次都是减，累积之后是负数，越累加，负得越多，说明总的amountOut越多
                 state.amountCalculated = state.amountCalculated.sub(step.amountOut.toInt256());
-            } else {
+                // 总结：精确输入的场景，amountSpecifiedRemaining由正向0靠拢，amountCalculated负得越来越多
+            } else { // 精确输出的场景
+                // state.amountSpecifiedRemaining初始化是负数，step.amountOut是正数，那么每次循环都加step.amountOut，state.amountSpecifiedRemaining就负得越少，剩余的amountout就越少
                 state.amountSpecifiedRemaining += step.amountOut.toInt256();
+                // state.amountCalculated的初始值是0,每一次循环都要进行累积
+                // 如果是精准输出，那么每次累积step.amountIn + step.feeAmount，注意，每次都是加，累积之后是正数，越累加，正得越多，说明总的amountIn越多
                 state.amountCalculated = state.amountCalculated.add((step.amountIn + step.feeAmount).toInt256());
+                // 总结：精确输出的场景，amountSpecifiedRemaining由负向0靠拢，amountCalculated正得越来越多
             }
 
             // if the protocol fee is on, calculate how much is owed, decrement feeAmount, and increment protocolFee
+            // 如果协议费用是打开的，计算欠多少，减feeAmount，增加protocolFee，即从feeAmount中划一部分到protocolFee
+            // cache的类型是SwapCache，缓存的swap之前的数据,feeProtocol来自于状态变量slot0Start.feeProtocol
             if (cache.feeProtocol > 0) {
-                uint256 delta = step.feeAmount / cache.feeProtocol;
-                step.feeAmount -= delta;
-                state.protocolFee += uint128(delta);
+                uint256 delta = step.feeAmount / cache.feeProtocol; // 协议费
+                step.feeAmount -= delta; // 手续费扣除协议费
+                state.protocolFee += uint128(delta); // 协议费累积
             }
 
             // update global fee tracker
-            if (state.liquidity > 0)
+            if (state.liquidity > 0)//TODO
                 state.feeGrowthGlobalX128 += FullMath.mulDiv(step.feeAmount, FixedPoint128.Q128, state.liquidity);
 
             // shift tick if we reached the next price
