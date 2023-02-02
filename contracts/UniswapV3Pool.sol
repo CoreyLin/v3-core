@@ -749,6 +749,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         // continue swapping as long as we haven't used the entire input/output and haven't reached the price limit
         // 只要我们没有使用完所有输入/输出，并且没有达到价格限制，就继续交换
+        // sqrtPriceLimitX96是交换后的token0的价格限制
         while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != sqrtPriceLimitX96) { // 只要交换的金额还没用完，以及池子的价格还没达到指定的价格限制
             // 每个while循环就新初始化一个StepComputations，代表一个计算步骤。有可能一个swap会包含多个计算步骤。
             StepComputations memory step;
@@ -759,7 +760,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
             // tickBitmap就是pool的一个状态变量
             // mapping(int16 => uint256) public override tickBitmap;
-            // nextInitializedTickWithinOneWord返回与给定tick的左边(小于或等于)或右边(大于)的tick包含在同一个word(或相邻word)中的下一个初始化的tick，注意：返回的可以是已经初始化的tick，也可以是还没有初始化的tick
+            // nextInitializedTickWithinOneWord返回与给定tick的左边(小于或等于)或右边(大于)的tick包含在同一个word(或相邻word)中的下一个初始化的tick，注意：返回的可能是已经初始化的tick，也可能是还没有初始化的tick
+            // 详细的可以直接看nextInitializedTickWithinOneWord方法的注释
             (step.tickNext, step.initialized) = tickBitmap.nextInitializedTickWithinOneWord(//TODO
                 state.tick, // SwapState的当前tick，随着循环的进行，在进行变化，初始值为池子的当前tick
                 tickSpacing, // 是一个不可变状态变量，pool初始化的时候就确定了。1.手续费0.05%：tickSpacing为10 2.手续费0.3%：tickSpacing为60 3.手续费0.1%：tickSpacing为200
@@ -767,24 +769,32 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             );
 
             // ensure that we do not overshoot the min/max tick, as the tick bitmap is not aware of these bounds
-            if (step.tickNext < TickMath.MIN_TICK) {
+            // 确保我们没有超过最小/最大tick，因为tick bitmap不知道这些界限
+            if (step.tickNext < TickMath.MIN_TICK) { // MIN_TICK=-887272
                 step.tickNext = TickMath.MIN_TICK;
-            } else if (step.tickNext > TickMath.MAX_TICK) {
+            } else if (step.tickNext > TickMath.MAX_TICK) { // MAX_TICK=887272
                 step.tickNext = TickMath.MAX_TICK;
             }
 
             // get the price for the next tick
+            // 获取下一个tick对应的根号价格，即sqrt(1.0001^tick) * 2^96，是一个Q64.96 number
             step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.tickNext);
 
             // compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
-            (state.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(
-                state.sqrtPriceX96,
+            // 计算交换到目标tick、或者价格限制、或者input/output耗尽的点所需要交换的value
+            (state.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(//TODO
+                state.sqrtPriceX96, // SwapState初始化的时候，sqrtPriceX96是池子的当前价格，后续随着while循环的进行，state.sqrtPriceX96就会发生变化，不再是池子的当前价格，会发生偏离
+                // sqrtPriceLimitX96是输入参数，代表交换后的token0的价格限制
+                // 如果zeroForOne为true，那么token0降价；反之token0涨价
+                // token0降价时，如果低于sqrtPriceLimitX96，那么就使用sqrtPriceLimitX96
+                // token0涨价时，如果高于sqrtPriceLimitX96，那么就使用sqrtPriceLimitX96
+                // 总之，就是使得next price不超过价格下限/上限
                 (zeroForOne ? step.sqrtPriceNextX96 < sqrtPriceLimitX96 : step.sqrtPriceNextX96 > sqrtPriceLimitX96)
                     ? sqrtPriceLimitX96
                     : step.sqrtPriceNextX96,
-                state.liquidity,
-                state.amountSpecifiedRemaining,
-                fee
+                state.liquidity, // 可用于池的当前范围内的流动性，这个值与所有ticks的总流动性没有关系
+                state.amountSpecifiedRemaining, // 在输入/输出资产中进行交换的剩余金额，即剩余还未交换的量
+                fee // 只可能是0.05%,0.3%,0.1%
             );
 
             if (exactInput) {
@@ -844,7 +854,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                 // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
                 state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
             }
-        }
+        } // 这里是while循环的结束
 
         // update tick and write an oracle entry if the tick change
         if (state.tick != slot0Start.tick) {

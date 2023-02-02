@@ -2,12 +2,17 @@
 pragma solidity >=0.5.0 <0.8.0;
 
 /// @title Math library for computing sqrt prices from ticks and vice versa
+/// 数学库，从tick计算根号价格，以及从根号价格计算tick
 /// @notice Computes sqrt price for ticks of size 1.0001, i.e. sqrt(1.0001^tick) as fixed point Q64.96 numbers. Supports
 /// prices between 2**-128 and 2**128
 library TickMath {
     /// @dev The minimum tick that may be passed to #getSqrtRatioAtTick computed from log base 1.0001 of 2**-128
+    // 2**-128=1/340282366920938463463374607431768211456=2.9387358770557187699218413430556141945466638919302188037718... × 10^-39
+    // 1.0001**-887272=2.93896×10^-39>2**-128
     int24 internal constant MIN_TICK = -887272;
     /// @dev The maximum tick that may be passed to #getSqrtRatioAtTick computed from log base 1.0001 of 2**128
+    // 2**128=3.40282366920938463463374607431768211456 × 10^38
+    // 1.0001**887272=3.40257×10^38 < 2**128
     int24 internal constant MAX_TICK = -MIN_TICK;
 
     /// @dev The minimum value that can be returned from #getSqrtRatioAtTick. Equivalent to getSqrtRatioAtTick(MIN_TICK)
